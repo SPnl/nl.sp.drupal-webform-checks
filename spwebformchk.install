@@ -1,0 +1,17 @@
+<?php
+
+// Our weight must be lower than webform_civicrm for our pre save hooks to work
+function spwebformchk_install() {
+	db_update('system')
+		->fields(array('weight' => -2))
+		->condition('name', 'webform', '=')
+		->execute();
+	db_update('system')
+		->fields(array('weight' => -1))
+		->condition('name', 'spwebformchk', '=')
+		->execute();
+	db_update('system')
+		->fields(array('weight' => 0))
+		->condition('name', 'webform_civicrm', '=')
+		->execute();
+}

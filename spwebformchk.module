@@ -1,0 +1,176 @@
+<?php
+
+function spwebformchk_form_alter(&$form, &$form_state, $form_id) {
+
+	if (substr($form_id, 0, 19) == 'webform_client_form') {
+		return _spwebformchk_client_form_alter($form, $form_state);
+	} elseif ($form_id == 'webform_configure_form') {
+		return _spwebformchk_configure_form_alter($form, $form_state);
+	}
+
+	return true;
+}
+
+function _spwebformchk_client_form_alter(&$form, &$form_state) {
+
+	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
+	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
+
+	if ($setting_postcode) {
+
+		$ajaxCallback = array(
+			'wrapper'  => 'spwebform_contact_fieldset',
+			'callback' => 'spwebformchk_postcode_callback',
+			'progress' => 'none',
+		);
+
+		$contact = &$form['submitted']['civicrm_1_contact_1_fieldset_fieldset'];
+		$contact['#attributes'] = array('id' => 'spwebform_contact_fieldset');
+
+		// Set postcode callback for country / postal code / house number fields
+		$contact['civicrm_1_contact_1_address_country_id']['#ajax'] = $ajaxCallback;
+		$contact['civicrm_1_contact_1_address_postal_code']['#ajax'] = $ajaxCallback;
+		$contact['civicrm_1_contact_1_address_spwebform_housenumber']['#ajax'] = $ajaxCallback;
+
+		// Set value for house number and street fields from CiviCRM data
+		// print_r($contact);
+
+		// Perform postcodedatabase lookup
+		$contactValues = &$form_state['values']['submitted']['civicrm_1_contact_1_fieldset_fieldset'];
+		$countryId = $contactValues['civicrm_1_contact_1_address_country_id'] ? $contactValues['civicrm_1_contact_1_address_country_id'] : $contact['civicrm_1_contact_1_address_country_id']['#default_value'];
+
+		if ($countryId == 1152) {
+			$disabled = true;
+
+			$zipcode = $contactValues['civicrm_1_contact_1_address_postal_code'];
+			$housenumber = $contactValues['civicrm_1_contact_1_address_spwebform_housenumber'];
+			if ($zipcode && $housenumber) {
+
+				$lookup = _spwebformchk_postcode_lookup($zipcode, $housenumber);
+				if ($lookup) {
+					$city = $lookup->woonplaats;
+					$street = $lookup->adres;
+					$contact['civicrm_1_contact_1_address_spwebform_pcdescription']['#markup'] = 'Uw straat- en plaatsnaam zijn automatisch ingevuld.';
+				} else {
+					$city = '';
+					$street = '';
+					$contact['civicrm_1_contact_1_address_spwebform_pcdescription']['#markup'] = 'Uw straat- en plaatsnaam konden niet worden gevonden. Controleer uw invoer.';
+				}
+			} else {
+				$city = '';
+				$street = '';
+				$contact['civicrm_1_contact_1_address_spwebform_pcdescription']['#markup'] = 'Uw straat- en plaatsnaam worden automatisch ingevuld.';
+			}
+
+			// Set street/city fields
+			$contact['civicrm_1_contact_1_address_city']['#default_value'] = $city;
+			$contact['civicrm_1_contact_1_address_spwebform_street']['#default_value'] = $street;
+
+		} else {
+			$disabled = false;
+			$contact['civicrm_1_contact_1_address_spwebform_pcdescription']['#markup'] = 'Voor adressen buiten Nederland moet u zelf de straat- en plaatsnaam invullen.';
+		}
+
+		// Enable / disable street fields
+		$contact['civicrm_1_contact_1_address_spwebform_street']['#disabled'] = $disabled;
+		$contact['civicrm_1_contact_1_address_city']['#disabled'] = $disabled;
+
+	}
+
+	if ($setting_doubles) {
+
+		// TODO add check for doubles
+	}
+
+	return true;
+}
+
+function spwebformchk_webform_submission_presave($node, &$submission) {
+
+	// $setting_doubles = variable_get('spwebform_doubles_' . $node->nid);
+	$setting_postcode = variable_get('spwebform_postcode_' . $node->nid);
+
+	if ($setting_postcode) {
+
+		// Save street address + house number to default CiviCRM address field
+
+		$components = array();
+		foreach ($node->webform['components'] as $key => $component) {
+			switch ($component['form_key']) {
+				case 'civicrm_1_contact_1_address_spwebform_street':
+					$components['street'] = $component['cid'];
+					break;
+				case 'civicrm_1_contact_1_address_spwebform_housenumber':
+					$components['housenumber'] = $component['cid'];
+					break;
+				case 'civicrm_1_contact_1_address_spwebform_housenumber_suffix':
+					$components['suffix'] = $component['cid'];
+					break;
+				case 'civicrm_1_contact_1_address_street_address':
+					$components['destination'] = $component['cid'];
+					break;
+			}
+		}
+
+		$submission->data[ $components['destination'] ] = array(
+			'0' => $submission->data[ $components['street'] ][0] . ' ' . $submission->data[ $components['housenumber'] ][0] . ($submission->data[ $components['suffix'] ][0] ? '-' . $submission->data[ $components['suffix'] ][0] : ''),
+		);
+
+	}
+}
+
+function _spwebformchk_postcode_lookup($postcode, $huisnummer) {
+
+	global $civicrm_root;
+	require_once $civicrm_root . '/api/class.api.php';
+	$api = new civicrm_api3;
+
+	$api->PostcodeNL->get(array(
+		'postcode'   => $postcode,
+		'huisnummer' => $huisnummer,
+	));
+	$res = $api->result();
+
+	if ($res && ! $res->is_error && count($res->values) > 0) {
+		return array_shift($res->values);
+	}
+
+	return array();
+}
+
+function spwebformchk_postcode_callback($form, &$form_state) {
+	return $form['submitted']['civicrm_1_contact_1_fieldset_fieldset'];
+}
+
+function _spwebformchk_configure_form_alter(&$form, &$form_state) {
+
+	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
+	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
+
+	$form['advanced']['spwebform_doubles'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'SP-webform: check op dubbelingen uitvoeren',
+		'#default_value' => $setting_doubles,
+		'#description'   => 'Op dit moment wordt alleen een CiviCRM-webform met één contact ondersteund.',
+		'#access'        => 1,
+	);
+	$form['advanced']['spwebform_postcode'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'SP-webform: postcodecheck uitvoeren',
+		'#default_value' => $setting_postcode,
+		'#description'   => 'Op dit moment moeten de benodigde velden zelf worden aangemaakt en ingesteld (civicrm_1_contact_1_address_spwebform_pcdescription, civicrm_1_contact_1_address_spwebform_housenumber, civicrm_1_contact_1_address_spwebform_housenumber_suffix, civicrm_1_contact_1_address_spwebform_street).',
+		'#access'        => 1,
+	);
+
+	$form['#submit'][] = '_spwebformchk_configure_form_submit';
+
+	return true;
+}
+
+function _spwebformchk_configure_form_submit(&$form, &$form_state) {
+
+	variable_set('spwebform_doubles_' . $form['#node']->nid, $form_state['values']['spwebform_doubles']);
+	variable_set('spwebform_postcode_' . $form['#node']->nid, $form_state['values']['spwebform_postcode']);
+
+	return true;
+}
