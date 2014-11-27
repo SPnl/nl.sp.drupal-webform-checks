@@ -1,5 +1,9 @@
 <?php
 
+/**
+ * Implements hook_form_alter
+ * Roept voor ieder webform-formulier en ieder webform-configure-formulier de betreffende functies aan.
+ */
 function spwebformchk_form_alter(&$form, &$form_state, $form_id) {
 
 	if (substr($form_id, 0, 19) == 'webform_client_form') {
@@ -11,14 +15,15 @@ function spwebformchk_form_alter(&$form, &$form_state, $form_id) {
 	return true;
 }
 
+/* Aanpassingen aan webforms. Voert afhankelijk van de instellingen een ajax-callback uit voor de postcodelookup en voor een simpele check op dubbele records in CiviCRM. */
 function _spwebformchk_client_form_alter(&$form, &$form_state) {
-
-	$api = _spwebformchk_civicrm_api();
 
 	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
 	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
 
-	if($setting_postcode || $setting_doubles) {
+	if ($setting_postcode || $setting_doubles) {
+
+		$api = _spwebformchk_civicrm_api();
 
 		// Ajax callback
 		$ajaxCallback = array(
@@ -37,7 +42,7 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 		$contact['civicrm_1_contact_1_address_spwebform_housenumber']['#ajax'] = $ajaxCallback;
 
 		// Set doubles callback for address + email
-		if($setting_doubles) {
+		if ($setting_doubles) {
 			$contact['civicrm_1_contact_1_email_email']['#ajax'] = $ajaxCallback;
 		}
 	}
@@ -45,12 +50,12 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 	if ($setting_postcode) {
 
 		// Set value for house number and street fields from CiviCRM data for currently logged in contact
-		if(array_key_exists('civicrm_1_contact_1_contact_existing', $contact) && $contact['civicrm_1_contact_1_contact_existing']['#type'] == 'hidden') {
+		if (array_key_exists('civicrm_1_contact_1_contact_existing', $contact) && $contact['civicrm_1_contact_1_contact_existing']['#type'] == 'hidden') {
 
 			global $user;
 			$api->UFMatch->Getsingle(array('uf_id' => $user->uid));
 			$contact_uf = $api->result();
-			if ( ! $contact_uf)
+			if (!$contact_uf)
 				throw new \Exception('Could not find CiviCRM contact with Drupal uid ' . $user->uid . '.');
 
 			$api->Address->Getsingle(array(
@@ -58,7 +63,7 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 				'is_primary' => 1,
 			));
 			$addressData = $api->result();
-			if ( ! $addressData || $addressData->is_error)
+			if (!$addressData || $addressData->is_error)
 				throw new \Exception('Error fetching address data for contact id ' . $contact_uf->contact_id . '.');
 
 			$contact['civicrm_1_contact_1_address_spwebform_housenumber']['#default_value'] = $addressData->street_number;
@@ -88,12 +93,12 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 				}
 			} else {
 				$city = '';
-					$street = '';
+				$street = '';
 				$contact['civicrm_1_contact_1_address_spwebform_pcdescription']['#markup'] = 'Uw straat- en plaatsnaam worden automatisch ingevuld.';
 			}
 
 			// Set street/city fields
-			if($city || $street) {
+			if ($city || $street) {
 				$contact['civicrm_1_contact_1_address_city']['#value'] = $city;
 				$contact['civicrm_1_contact_1_address_spwebform_street']['#value'] = $street;
 			}
@@ -111,51 +116,51 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 	if ($setting_doubles) {
 
 		// Checken op dubbelen op basis van postcode/huisnummer
-		if(!empty($contactValues['civicrm_1_contact_1_address_postal_code']) && !empty($contactValues['civicrm_1_contact_1_address_spwebform_housenumber'])) {
+		if (!empty($contactValues['civicrm_1_contact_1_address_postal_code']) && !empty($contactValues['civicrm_1_contact_1_address_spwebform_housenumber'])) {
 			$api->Address->Get(array(
 				'postal_code' => $contactValues['civicrm_1_contact_1_address_postal_code'],
 				'housenumber' => $contactValues['civicrm_1_contact_1_address_spwebform_housenumber'],
 			));
 			$addressCheck = $api->result();
-			if($addressCheck && $addressCheck->count > 0) {
+			if ($addressCheck && $addressCheck->count > 0) {
 				$retMsg = array();
-				foreach($addressCheck->values as $record) {
+				foreach ($addressCheck->values as $record) {
 					$api->Contact->Getsingle(array(
 						'contact_id' => $record->contact_id,
 					));
 					$contactChk = $api->result();
-					if($contactChk && !$contactChk->is_error)
+					if ($contactChk && !$contactChk->is_error)
 						$retMsg[] = '<a href="/civicrm/contact/view/?cid=' . $contactChk->contact_id . '">' . $contactChk->contact_id . ' ' . $contactChk->display_name . '</a>';
 				}
 
 				drupal_set_message('Let op, ' .
 					(count($retMsg) == 1 ? 'er bestaat al een contact' : 'er bestaan al ' . count($retMsg) . ' contacten') .
-					' op dit adres: ' . implode(', ', $retMsg),
+					' op dit adres: ' . implode(', ', $retMsg) . '. CiviCRM zal deze mogelijk samenvoegen.',
 					'warning');
 			}
 		}
 
 		// Checken op dubbelen op basis van emailadres
-		if(!empty($contactValues['civicrm_1_contact_1_email_email'])) {
+		if (!empty($contactValues['civicrm_1_contact_1_email_email'])) {
 			$api->Email->Get(array(
 				'email' => $contactValues['civicrm_1_contact_1_email_email'],
 			));
 			$emailCheck = $api->result();
-			if($emailCheck && $emailCheck->count > 0) {
+			if ($emailCheck && $emailCheck->count > 0) {
 
 				$retMsg = array();
-				foreach($emailCheck->values as $record) {
+				foreach ($emailCheck->values as $record) {
 					$api->Contact->Getsingle(array(
 						'contact_id' => $record->contact_id,
 					));
 					$contactChk = $api->result();
-					if($contactChk && !$contactChk->is_error)
+					if ($contactChk && !$contactChk->is_error)
 						$retMsg[] = '<a href="/civicrm/contact/view/?cid=' . $contactChk->contact_id . '">' . $contactChk->contact_id . ' ' . $contactChk->display_name . '</a>';
 				}
 
 				drupal_set_message('Let op, ' .
 					(count($retMsg) == 1 ? 'er bestaat al een contact' : 'er bestaan al ' . count($retMsg) . ' contacten') .
-					' met dit emailadres: ' . implode(', ', $retMsg),
+					' met dit emailadres: ' . implode(', ', $retMsg) . '. CiviCRM zal deze mogelijk samenvoegen.',
 					'warning');
 			}
 		}
@@ -165,9 +170,9 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 	return true;
 }
 
+/* Voorafgaand aan webform opslaan: postcode-lookup verwerken */
 function spwebformchk_webform_submission_presave($node, &$submission) {
 
-	// $setting_doubles = variable_get('spwebform_doubles_' . $node->nid);
 	$setting_postcode = variable_get('spwebform_postcode_' . $node->nid);
 
 	if ($setting_postcode) {
@@ -192,13 +197,265 @@ function spwebformchk_webform_submission_presave($node, &$submission) {
 			}
 		}
 
-		$submission->data[ $components['destination'] ] = array(
-			'0' => $submission->data[ $components['street'] ][0] . ' ' . $submission->data[ $components['housenumber'] ][0] . ($submission->data[ $components['suffix'] ][0] ? '-' . $submission->data[ $components['suffix'] ][0] : ''),
+		$submission->data[$components['destination']] = array(
+			'0' => $submission->data[$components['street']][0] . ' ' . $submission->data[$components['housenumber']][0] . ($submission->data[$components['suffix']][0] ? '-' . $submission->data[$components['suffix']][0] : ''),
 		);
 
 	}
 }
 
+/* Verzenden van webform. -> Mandaten e.d. moeten nog aangemaakt worden */
+function spwebformchk_webform_submission_insert($node, $submission) {
+
+	$setting_mandate = variable_get('spwebform_mandate_' . $node->nid);
+	if ($setting_mandate) {
+
+		// Deze functie wordt aangeroepen vóór de insert. Maar we moeten ná de insert
+		// het lidmaatschap aanvullen in CiviCRM. Wat doe je dan? Nou...
+
+		$queue = DrupalQueue::get('spwebform_queue');
+
+		// Components array versimpeld opslaan
+		$components = array();
+		foreach ($node->webform['components'] as $component) {
+			$components[$component['cid']] = array(
+				'form_key' => $component['form_key'],
+				'name'     => $component['name'],
+			);
+		}
+
+		// Queue item aanmaken
+
+		$queue->createItem(array(
+			'time'       => time(),
+			'submission' => $submission,
+			'components' => $components,
+		));
+
+		// Deze queue wordt geleegd vanuit een cronjob, zie onder
+	}
+}
+
+/**
+ * Implements hook_cron_queue_info.
+ */
+function spwebformchk_cron_queue_info() {
+
+	return array(
+		'spwebform_queue' => array(
+			'worker callback' => 'spwebformchk_cron_callback',
+			'time'            => 30,
+		)
+	);
+}
+
+function spwebformchk_cron_callback($item) {
+
+	if (!$item)
+		return false;
+
+	if ($item->data['time'] < (time() - 10)) { // Geef CiviCRM even de tijd om de records aan te maken
+
+		// Get webform submission
+		$submission = db_select('webform_civicrm_submissions', 's')
+			->fields('s')
+			->condition('sid', $item->data['submission']->sid, '=')
+			->execute()
+			->fetchAssoc();
+
+		// Find contact
+		$contact_id = preg_replace('/[^0-9]/', '', $submission['contact_id']);
+		if (!$contact_id) {
+			watchdog('spwebform', 'Contact does not exist for webform submission ' . $item->data['submission']->sid . '.', array(), WATCHDOG_WARNING);
+			return false;
+		}
+
+		// Get fields from submission array
+		$subdata = &$item->data['submission']->data;
+		foreach ($item->data['components'] as $cid => $component) {
+			if ($component['form_key'] == 'civicrm_1_membership_1_membership_membership_type_id') {
+				$membership_type = $subdata[$cid];
+			} elseif ($component['name'] == 'IBAN') {
+				$iban = $subdata[$cid];
+			} elseif ($component['name'] == 'BIC') {
+				$bic = $subdata[$cid];
+			} elseif ($component['form_key'] == 'civicrm_1_contact_1_address_city') {
+				$plaats = $subdata[$cid];
+			}
+		}
+
+		// Find membership
+		$api = _spwebformchk_civicrm_api();
+		$api->Membership->getsingle(array(
+			'contact_id' => $contact_id,
+		    'membership_type_id' => $membership_type[0],
+		));
+		$membership = $api->result();
+		if (!$membership) {
+			watchdog('spwebform', 'Membership does not exist for webform submission ' . $item->data['submission']->sid . '.', array(), WATCHDOG_WARNING);
+			return false;
+		}
+
+		// Insert mandate
+		$sepaFields = _spwebformchk_get_sepa_fields();
+		$api->CustomValue->create(array(
+			'entity_id'                                  => $contact_id,
+			'custom_' . $sepaFields['status']->id        => 'FRST',
+			'custom_' . $sepaFields['mandaat_nr']->id    => sprintf('%08d', $contact_id) . '-0001',
+			'custom_' . $sepaFields['subject']->id       => $membership->membership_name,
+			'custom_' . $sepaFields['mandaat_datum']->id => date('YmdHis'),
+			'custom_' . $sepaFields['plaats']->id        => $plaats,
+			'custom_' . $sepaFields['IBAN']->id          => $iban,
+			'custom_' . $sepaFields['BIC']->id           => $bic,
+		));
+
+		// Link mandate to membership
+		// TODO
+	}
+
+	return true;
+}
+
+/* Ajax callback: checkt op dubbelen, verwerkt postcodelookup */
+function spwebformchk_ajax_callback($form, &$form_state) {
+	return $form['submitted']['civicrm_1_contact_1_fieldset_fieldset'];
+}
+
+/* Aanpassingen aan webform-configuratiescherm */
+function _spwebformchk_configure_form_alter(&$form, &$form_state) {
+
+	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
+	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
+	$setting_mandate = variable_get('spwebform_mandate_' . $form['#node']->nid);
+
+	$form['spwebform'] = array(
+		'#type'        => 'fieldset',
+		'#title'       => t('SP Webform-opties'),
+		'#collapsible' => true,
+		'#collapsed'   => true,
+		'#weight'      => 20,
+	);
+
+	$form['spwebform']['spwebform_description'] = array(
+		'#type'   => 'markup',
+		'#markup' => 'Let op: deze opties zijn alleen geldig voor een CiviCRM-formulier dat een contact en/of lidmaatschap toevoegt, en kunnen elders leiden tot errors.',
+	);
+	$form['spwebform']['spwebform_doubles'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'SP-webform: check op dubbelingen uitvoeren',
+		'#default_value' => $setting_doubles,
+		'#description'   => 'Controleer op dubbelingen op basis van postcode/huisnummer en e-mailadres. Op dit moment wordt alleen een CiviCRM-webform met één contact ondersteund.',
+		'#access'        => 1,
+	);
+	$form['spwebform']['spwebform_postcode'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'SP-webform: postcodecheck uitvoeren',
+		'#default_value' => $setting_postcode,
+		'#description'   => 'Vul straatnaam en woonplaats automatisch in op basis van postcode en huisnummer.',
+		'#access'        => 1,
+	);
+	$form['spwebform']['spwebform_mandate'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'SP-webform: mandaat toevoegen',
+		'#default_value' => $setting_mandate,
+		'#description'   => 'Voeg een mandaat toe met IBAN- en BIC-data voor het lidmaatschap dat dit webform aanmaakt.',
+		'#access'        => 1,
+	);
+
+	$form['#submit'][] = '_spwebformchk_configure_form_submit';
+
+	return true;
+}
+
+/* Aanpassingen aan webform-configuratiescherm */
+function _spwebformchk_configure_form_submit(&$form, &$form_state) {
+
+	// Instellingen opslaan
+	$setting_doubles = $form_state['values']['spwebform_doubles'];
+	$setting_postcode = $form_state['values']['spwebform_postcode'];
+	$setting_mandate = $form_state['values']['spwebform_mandate'];
+
+	variable_set('spwebform_doubles_' . $form['#node']->nid, $setting_doubles);
+	variable_set('spwebform_postcode_' . $form['#node']->nid, $setting_postcode);
+	variable_set('spwebform_mandate_' . $form['#node']->nid, $setting_mandate);
+
+	// Probeer automatisch postcodevelden toe te voegen (velden voor andere opties zijn CiviCRM-standaard)
+	if ($setting_postcode) {
+
+		$node = node_load($form_state['values']['nid']);
+
+		$webform_existing_fields = array();
+		foreach ($node->webform['components'] as $key => $component) {
+			$webform_existing_fields[(string) $key] = $component['form_key'];
+		}
+
+		if (!in_array('civicrm_1_contact_1_address_spwebform_housenumber', $webform_existing_fields)) {
+			$node->webform['components'][] = array(
+				'name'      => 'Huisnummer',
+				'form_key'  => 'civicrm_1_contact_1_address_spwebform_housenumber',
+				'type'      => 'textfield',
+				'mandatory' => 1,
+				'pid'       => 1,
+				'weight'    => 0,
+			);
+		}
+
+		if (!in_array('civicrm_1_contact_1_address_spwebform_housenumber_suffix', $webform_existing_fields)) {
+			$node->webform['components'][] = array(
+				'name'      => 'Huisnummer toevoeging',
+				'form_key'  => 'civicrm_1_contact_1_address_spwebform_housenumber_suffix',
+				'type'      => 'textfield',
+				'mandatory' => 1,
+				'pid'       => 1,
+				'weight'    => 0,
+			);
+		}
+
+		if (!in_array('civicrm_1_contact_1_address_spwebform_pcdescription', $webform_existing_fields)) {
+			$node->webform['components'][] = array(
+				'name'     => 'Postcodemelding',
+				'form_key' => 'civicrm_1_contact_1_address_spwebform_pcdescription',
+				'type'     => 'markup',
+				'pid'      => 1,
+				'weight'   => 0,
+			);
+		}
+
+		if (!in_array('civicrm_1_contact_1_address_spwebform_street', $webform_existing_fields)) {
+			$node->webform['components'][] = array(
+				'name'     => 'Straat',
+				'form_key' => 'civicrm_1_contact_1_address_spwebform_street',
+				'type'     => 'textfield',
+				'pid'      => 1,
+				'weight'   => 0,
+			);
+		}
+
+		$street_address = array_search('civicrm_1_contact_1_address_street_address', $node->webform['components']);
+		if ($street_address) {
+			$node->webform['components'][$street_address]['type'] = 'hidden';
+		}
+
+		node_save($node);
+	}
+
+	return true;
+}
+
+/* Helper-functie om de API te initialiseren en een API-class te retourneren */
+function _spwebformchk_civicrm_api() {
+	civicrm_initialize();
+	require_once 'api/class.api.php';
+
+	return new civicrm_api3;
+}
+
+/**
+ * Postcode-lookup via CiviCRM API
+ * @param $postcode Postcode
+ * @param $huisnummer Huisnummer
+ * @return array|mixed Resultaat
+ */
 function _spwebformchk_postcode_lookup($postcode, $huisnummer) {
 
 	$api = _spwebformchk_civicrm_api();
@@ -208,52 +465,58 @@ function _spwebformchk_postcode_lookup($postcode, $huisnummer) {
 	));
 	$res = $api->result();
 
-	if ($res && ! $res->is_error && count($res->values) > 0) {
+	if ($res && !$res->is_error && count($res->values) > 0) {
 		return array_shift($res->values);
 	}
 
 	return array();
 }
 
-function spwebformchk_ajax_callback($form, &$form_state) {
-	return $form['submitted']['civicrm_1_contact_1_fieldset_fieldset'];
-}
+// Haalt SEPA Mandaat custom fields op
+function _spwebformchk_get_sepa_fields() {
 
-function _spwebformchk_configure_form_alter(&$form, &$form_state) {
+	$sepaFields = cache_get('spwebform_sepa_fields');
+	if ($sepaFields)
+		return $sepaFields->data;
 
-	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
-	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
+	$api = _spwebformchk_civicrm_api();
 
-	$form['advanced']['spwebform_doubles'] = array(
-		'#type'          => 'checkbox',
-		'#title'         => 'SP-webform: check op dubbelingen uitvoeren',
-		'#default_value' => $setting_doubles,
-		'#description'   => 'Op dit moment wordt alleen een CiviCRM-webform met één contact ondersteund. Er wordt gecontroleerd op basis van postcode/huisnummer en e-mailadres.',
-		'#access'        => 1,
-	);
-	$form['advanced']['spwebform_postcode'] = array(
-		'#type'          => 'checkbox',
-		'#title'         => 'SP-webform: postcodecheck uitvoeren',
-		'#default_value' => $setting_postcode,
-		'#description'   => 'Op dit moment moeten de benodigde velden zelf worden aangemaakt en ingesteld (civicrm_1_contact_1_address_spwebform_pcdescription, civicrm_1_contact_1_address_spwebform_housenumber, civicrm_1_contact_1_address_spwebform_housenumber_suffix, civicrm_1_contact_1_address_spwebform_street).',
-		'#access'        => 1,
-	);
+	// SEPA Mandaat Custom Group
 
-	$form['#submit'][] = '_spwebformchk_configure_form_submit';
+	$api->CustomGroup->getsingle(array(
+		'name' => 'SEPA_Mandaat',
+	));
+	$customGroup = $api->result();
 
-	return true;
-}
+	$api->CustomField->get(array(
+		'custom_group_id' => $customGroup->id,
+	));
+	$sepaFields = array();
+	foreach ($api->result()->values as $field) {
+		$sepaFields[$field->name] = $field;
+	}
 
-function _spwebformchk_configure_form_submit(&$form, &$form_state) {
+	// Contribution Custom Group
 
-	variable_set('spwebform_doubles_' . $form['#node']->nid, $form_state['values']['spwebform_doubles']);
-	variable_set('spwebform_postcode_' . $form['#node']->nid, $form_state['values']['spwebform_postcode']);
+	$api->CustomGroup->getsingle(array('name' => 'Contribution_SEPA_Mandaat'));
+	$contributionCustomGroup = $api->result();
+	$api->CustomField->getsingle(array(
+		'custom_group_id' => $contributionCustomGroup->id,
+	));
+	$sepaFields['contribution_mandaat_nr'] = $api->result();
 
-	return true;
-}
+	// Membership Custom Group
 
-function _spwebformchk_civicrm_api() {
-	civicrm_initialize();
-	require_once 'api/class.api.php';
-	return new civicrm_api3;
+	$api->CustomGroup->getsingle(array('name' => 'Membership_SEPA_Mandaat'));
+	$membershipCustomGroup = $api->result();
+	$api->CustomField->getsingle(array(
+		'custom_group_id' => $membershipCustomGroup->id,
+	));
+	$sepaFields['membership_mandaat_nr'] = $api->result();
+
+	// Cache result
+
+	cache_set('spwebform_sepa_fields', $sepaFields, 'cache', time() + 86400);
+
+	return $sepaFields;
 }
