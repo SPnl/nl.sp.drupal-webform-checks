@@ -55,16 +55,20 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 			global $user;
 			$api->UFMatch->Getsingle(array('uf_id' => $user->uid));
 			$contact_uf = $api->result();
-			if (!$contact_uf)
-				throw new \Exception('Could not find CiviCRM contact with Drupal uid ' . $user->uid . '.');
+			if (!$contact_uf || $contact_uf->is_error) {
+				// throw new \Exception('Could not find CiviCRM contact with Drupal uid ' . $user->uid . '.');
+				return drupal_set_message('Er bestaat geen CiviCRM-contact voor deze gebruiker (uid ' . $user->uid . ').', 'error');
+			}
 
 			$api->Address->Getsingle(array(
 				'contact_id' => wf_crm_user_cid(),
 				'is_primary' => 1,
 			));
 			$addressData = $api->result();
-			if (!$addressData || $addressData->is_error)
-				throw new \Exception('Error fetching address data for contact id ' . $contact_uf->contact_id . '.');
+			if (!$addressData || $addressData->is_error) {
+				// throw new \Exception('Error fetching address data for contact id ' . $contact_uf->contact_id . '.');
+				return drupal_set_message('De adresgegevens voor dit contact (' . $contact_uf->contact_id . ') konden niet opgehaald worden.', 'error');
+			}
 
 			$contact['civicrm_1_contact_1_address_spwebform_housenumber']['#default_value'] = $addressData->street_number;
 			$contact['civicrm_1_contact_1_address_spwebform_housenumber_suffix']['#default_value'] = $addressData->street_unit;
