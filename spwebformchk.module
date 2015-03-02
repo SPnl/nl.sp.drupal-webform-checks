@@ -201,8 +201,12 @@ function spwebformchk_webform_submission_presave($node, &$submission) {
 			}
 		}
 
+		$suffix = $submission->data[$components['suffix']][0];
+		if($suffix)
+			$suffix = ' ' . (strpos($suffix,'-') !== false ? '' : '-') . $suffix;		
+
 		$submission->data[$components['destination']] = array(
-			'0' => $submission->data[$components['street']][0] . ' ' . $submission->data[$components['housenumber']][0] . ($submission->data[$components['suffix']][0] ? ' -' . $submission->data[$components['suffix']][0] : ''),
+			'0' => $submission->data[$components['street']][0] . ' ' . $submission->data[$components['housenumber']][0] . $suffix,
 		);
 
 	}
