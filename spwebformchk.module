@@ -202,7 +202,7 @@ function spwebformchk_webform_submission_presave($node, &$submission) {
 		}
 
 		$submission->data[$components['destination']] = array(
-			'0' => $submission->data[$components['street']][0] . ' ' . $submission->data[$components['housenumber']][0] . ($submission->data[$components['suffix']][0] ? '-' . $submission->data[$components['suffix']][0] : ''),
+			'0' => $submission->data[$components['street']][0] . ' ' . $submission->data[$components['housenumber']][0] . ($submission->data[$components['suffix']][0] ? ' ' . $submission->data[$components['suffix']][0] : ''),
 		);
 
 	}
