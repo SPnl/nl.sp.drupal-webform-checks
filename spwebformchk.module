@@ -178,6 +178,7 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 function spwebformchk_webform_submission_presave($node, &$submission) {
 
 	$setting_postcode = variable_get('spwebform_postcode_' . $node->nid);
+	$setting_participantmail = variable_get('spwebform_participantmail_' . $node->nid);
 
 	if ($setting_postcode) {
 
@@ -212,9 +213,80 @@ function spwebformchk_webform_submission_presave($node, &$submission) {
 	}
 }
 
-/* Verzenden van webform. -> Gebeurt nu niets meer, niet-werkende mandate support hier verwijderd. */
+/* Verzenden van webform. -> De hooks van deze module hebben een lager gewicht dan webform_civicrm. De webform-afhandeling zit in de presave, dus voor de event-bevestigingsmail gaan we in de insert hook kijken of er iets te doen valt. */
 function spwebformchk_webform_submission_insert($node, $submission) {
 
+	global $user;
+
+	$setting_participantmail = variable_get('spwebform_participantmail_' . $node->nid);
+
+	if ($setting_participantmail) {
+
+		// Get data from submission
+		$components = array();
+		foreach ($node->webform['components'] as $key => $component) {
+			switch ($component['form_key']) {
+				case 'civicrm_1_contact_1_contact_existing':
+					$components['contact_id'] = $component['cid'];
+					break;
+				case 'civicrm_1_participant_1_participant_event_id':
+					$components['event_ids'] = $component['cid'];
+					break;
+			}
+		}
+
+		$contact_id = $submission->data[$components['contact_id']][0];
+		$event_ids = $submission->data[$components['event_ids']];
+
+		if(!$contact_id || !$event_ids || count($event_ids) == 0)
+			return true;
+
+		$fromEmail = variable_get('spwebform_participantmail_from_' . $node->nid);
+
+		$api = _spwebformchk_civicrm_api();
+
+		// Walk events and send confirmation emails for each event
+		foreach($event_ids as $event_id_and_type) {
+			list($event_id) = explode('-', $event_id_and_type);
+
+			try {
+				// Get participant and contact record
+				$api->Participant->Getsingle(array('contact_id' => $contact_id, 'event_id' => $event_id));
+				$participant = (array) $api->result();
+
+				$api->Contact->Getsingle(array('contact_id' => $contact_id));
+				$contact = (array) $api->result();
+
+				// Event - called via the BAO because the API doesn't return all relevant fields
+				$eventParams = array('id' => $event_id);
+				CRM_Event_BAO_Event::retrieve($eventParams, $event);
+
+				// Send the email!
+				list($mailSent, $subject, $message, $html) = CRM_Core_BAO_MessageTemplate::sendTemplate(
+					array(
+						'groupName' => 'msg_tpl_workflow_event',
+						'valueName' => 'event_online_receipt',
+						'contactId' => $contact_id,
+						'tplParams' => array(
+							'contact' => $contact,
+							'participant' => $participant,
+							'event' => $event,
+							'isShowLocation' => false,
+						),
+						'from' => $fromEmail,
+						'toName' => $contact['display_name'],
+						'toEmail' => $contact['email'],
+					)
+				);
+
+			} catch(CiviCRM_API3_Exception $e) {
+				// Could not find participant / contact / event record (that should never happen)
+				continue;
+			}
+		}
+	}
+
+	return true;
 }
 
 /* Ajax callback: checkt op dubbelen, verwerkt postcodelookup */
@@ -227,6 +299,8 @@ function _spwebformchk_configure_form_alter(&$form, &$form_state) {
 
 	$setting_doubles = variable_get('spwebform_doubles_' . $form['#node']->nid);
 	$setting_postcode = variable_get('spwebform_postcode_' . $form['#node']->nid);
+	$setting_participantmail = variable_get('spwebform_participantmail_' . $form['#node']->nid);
+	$setting_participantmail_from = variable_get('spwebform_participantmail_from_' . $form['#node']->nid);
 
 	$form['spwebform'] = array(
 		'#type'        => 'fieldset',
@@ -238,20 +312,36 @@ function _spwebformchk_configure_form_alter(&$form, &$form_state) {
 
 	$form['spwebform']['spwebform_description'] = array(
 		'#type'   => 'markup',
-		'#markup' => 'Let op: deze opties zijn alleen geldig voor een CiviCRM-formulier dat een contact en/of lidmaatschap toevoegt, en kunnen elders leiden tot errors.',
+		'#markup' => 'Extra maatwerk-opties voor webformulieren op SPnet:',
 	);
 	$form['spwebform']['spwebform_doubles'] = array(
 		'#type'          => 'checkbox',
-		'#title'         => 'SP-webform: check op dubbelingen uitvoeren',
+		'#title'         => 'Contact: check op dubbelingen uitvoeren',
 		'#default_value' => $setting_doubles,
-		'#description'   => 'Controleer op dubbelingen op basis van postcode/huisnummer en e-mailadres. Op dit moment wordt alleen een CiviCRM-webform met één contact ondersteund.',
+		'#description'   => 'Controleer op dubbelingen op basis van postcode/huisnummer en e-mailadres. Op dit moment wordt alleen een CiviCRM-webform met één contact ondersteund.<br />Let op: de dubbelingen- en postcode-check alleen toevoegen aan een CiviCRM-formulier dat een contact en/of lidmaatschap toevoegt, ze kunnen elders leiden tot errors.',
 		'#access'        => 1,
 	);
 	$form['spwebform']['spwebform_postcode'] = array(
 		'#type'          => 'checkbox',
-		'#title'         => 'SP-webform: postcodecheck uitvoeren',
+		'#title'         => 'Contact: postcodecheck uitvoeren',
 		'#default_value' => $setting_postcode,
 		'#description'   => 'Vul straatnaam en woonplaats automatisch in op basis van postcode en huisnummer.',
+		'#access'        => 1,
+	);
+
+	$form['spwebform']['spwebform_participantmail'] = array(
+		'#type'          => 'checkbox',
+		'#title'         => 'Events: deelnamebevestiging versturen',
+		'#default_value' => $setting_participantmail,
+		'#description'   => 'Stuur een inschrijvingsbevestiging naar de deelnemer die voor een cursus wordt aangemeld (voorzittersformulier).',
+		'#access'        => 1,
+	);
+
+	$form['spwebform']['spwebform_participantmail_from'] = array(
+		'#type'          => 'textfield',
+		'#title'         => 'E-mailadres voor deelnamebevestiging',
+		'#default_value' => $setting_participantmail_from,
+		'#description'   => 'Het afzendadres voor de deelnamebevestiging die verstuurd wordt als bovenstaande optie is aangevinkt. Syntax: \'"Studiecentrum SP" &lt;studiecentrum@sp.nl&gt;\'',
 		'#access'        => 1,
 	);
 
@@ -266,9 +356,13 @@ function _spwebformchk_configure_form_submit(&$form, &$form_state) {
 	// Instellingen opslaan
 	$setting_doubles = $form_state['values']['spwebform_doubles'];
 	$setting_postcode = $form_state['values']['spwebform_postcode'];
+	$setting_participantmail = $form_state['values']['spwebform_participantmail'];
+	$setting_participantmail_from = $form_state['values']['spwebform_participantmail_from'];
 
 	variable_set('spwebform_doubles_' . $form['#node']->nid, $setting_doubles);
 	variable_set('spwebform_postcode_' . $form['#node']->nid, $setting_postcode);
+	variable_set('spwebform_participantmail_' . $form['#node']->nid, $setting_participantmail);
+	variable_set('spwebform_participantmail_from_' . $form['#node']->nid, $setting_participantmail_from);
 
 	// Probeer automatisch postcodevelden toe te voegen (velden voor andere opties zijn CiviCRM-standaard)
 	if ($setting_postcode) {
