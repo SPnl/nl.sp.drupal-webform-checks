@@ -261,6 +261,9 @@ function spwebformchk_webform_submission_insert($node, $submission) {
 				$eventParams = array('id' => $event_id);
 				CRM_Event_BAO_Event::retrieve($eventParams, $event);
 
+				// Event location (borrowed from CRM_Event_BAO_Participant::TransitionParticipants)
+				$location = CRM_Core_BAO_Location::getValues(array('entity_id' => $event_id, 'entity_table' => 'civicrm_event'), TRUE);
+
 				// Send the email!
 				list($mailSent, $subject, $message, $html) = CRM_Core_BAO_MessageTemplate::sendTemplate(
 					array(
@@ -271,7 +274,8 @@ function spwebformchk_webform_submission_insert($node, $submission) {
 							'contact' => $contact,
 							'participant' => $participant,
 							'event' => $event,
-							'isShowLocation' => false,
+							'isShowLocation' => ($location ? true : false),
+							'location' => $location,
 						),
 						'from' => $fromEmail,
 						'toName' => $contact['display_name'],
