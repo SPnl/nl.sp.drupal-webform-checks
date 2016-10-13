@@ -68,7 +68,7 @@ function _spwebformchk_client_form_alter(&$form, &$form_state) {
 
 		// Set value for house number and street fields from CiviCRM data for the first contact on the form
 		if (array_key_exists('civicrm_1_contact_1_contact_existing', $contact) && $contact['civicrm_1_contact_1_contact_existing']['#type'] == 'hidden') {
-      $contact1_id = $form_state['civicrm']['contact'][1]['id'];
+      $contact1_id = $form_state['civicrm']['ent']['contact'][1]['id'];
 			$api->Address->Getsingle(array(
 				'contact_id' => $contact1_id,
 				'is_primary' => 1,
