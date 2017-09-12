@@ -1,7 +1,6 @@
 {
   "name": "SPnl/nl.sp.drupal-webform-checks",
   "description": "Extra checks/validatie voor webform_civicrm.",
-  "version": "1.2.1",
   "type": "drupal-module",
   "authors": [
     {
